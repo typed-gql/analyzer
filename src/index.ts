@@ -4,6 +4,8 @@ import {
   OperationType,
   ArgumentsDefinition as ParserArgumentsDefinition,
   Directive as ParserDirective,
+  FieldDefinition as ParserFieldDefinition,
+  FieldsDefinition as ParserFieldsDefinition,
   Type,
   Value,
 } from "@typed-gql/parser";
@@ -15,7 +17,7 @@ export interface Error {
 
 export type DirectiveLocationMap = Partial<Record<DirectiveLocation, true>>;
 
-export type ArgumentsDefinition = Partial<Record<string, ArgumentDefinition>>;
+export type ArgumentsDefinition = Partial<Record<string, InputValueDefinition>>;
 
 export interface Argument {
   name: string;
@@ -27,14 +29,6 @@ export type Arguments = Partial<Record<string, Argument>>;
 export interface Directive {
   name: string;
   arguments: Arguments;
-}
-
-export interface ArgumentDefinition {
-  description: string | undefined;
-  name: string;
-  type: Type;
-  defaultValue: Value | undefined;
-  directives: Directive[];
 }
 
 export type DirectiveDefinitions = Partial<Record<string, DirectiveDefinition>>;
@@ -59,6 +53,63 @@ export interface ScalarTypeDefinition extends TypeDefinitionBase {
   type: "scalar";
 }
 
+export interface FieldDefinition {
+  description?: string;
+  name: string;
+  argumentsDefinition: ArgumentsDefinition;
+  type: Type;
+  directives: Directive[];
+}
+
+export type FieldsDefinition = Partial<Record<string, FieldDefinition>>;
+
+export interface ObjectTypeDefinition extends TypeDefinitionBase {
+  type: "object";
+  implementsInterfaces: string[];
+  fieldsDefinition: FieldsDefinition;
+}
+
+export interface InterfaceTypeDefinition extends TypeDefinitionBase {
+  type: "interface";
+  implementsInterfaces: string[];
+  fieldsDefinition: FieldsDefinition;
+}
+
+export interface UnionTypeDefinition extends TypeDefinitionBase {
+  type: "union";
+  unionMemberTypes: string[];
+}
+
+export interface EnumValueDefinition {
+  name: string;
+  description: string | undefined;
+  directives: Directive[];
+}
+
+export type EnumValuesDefinition = Partial<Record<string, EnumValueDefinition>>;
+
+export interface EnumTypeDefinition extends TypeDefinitionBase {
+  type: "enum";
+  enumValuesDefinition: EnumValuesDefinition;
+}
+
+export interface InputValueDefinition {
+  name: string;
+  description: string | undefined;
+  type: Type;
+  defaultValue: Value | undefined;
+  directives: Directive[];
+}
+
+export type InputFieldsDefinition = Partial<
+  Record<string, InputValueDefinition>
+>;
+
+export interface InputObjectTypeDefinition extends TypeDefinitionBase {
+  type: "inputObject";
+  inputFieldsDefinition: InputFieldsDefinition;
+}
+
 export type TypeDefinition =
   | ScalarTypeDefinition
   | ObjectTypeDefinition
@@ -76,8 +127,8 @@ export interface Schema {
   typeDefinitions: TypeDefinitions;
 }
 
-export interface Query {
-  //
+export interface Operation {
+  // TODO:
 }
 
 class ParseError extends Error {
@@ -172,9 +223,7 @@ function schema(document: Document): Schema | Error {
                 }
                 description = definition.description;
                 schemaDirectives.push(
-                  ...(definition.directives ?? []).map((d) =>
-                    unwrap(directive(d))
-                  )
+                  ...directives(definition.directives, "schema definition")
                 );
                 break;
               }
@@ -190,9 +239,11 @@ function schema(document: Document): Schema | Error {
                   locations: {},
                   name: definition.name,
                   repeatable: definition.repeatable,
-                  argumentsDefinition: optional(
-                    definition.argumentsDefinition,
-                    (t) => unwrap(argumentsDefinition(t))
+                  argumentsDefinition: unwrap(
+                    inputValuesDefinition(
+                      definition.argumentsDefinition,
+                      `directive ${definition.name}`
+                    )
                   ),
                 } as DirectiveDefinition);
                 for (const directiveLocation of definition.directiveLocations) {
@@ -219,10 +270,358 @@ function schema(document: Document): Schema | Error {
                       name: definition.name,
                       type: "scalar",
                       description: definition.description,
-                      directives: (definition.directives ?? []).map((d) =>
-                        unwrap(directive(d))
+                      directives: directives(
+                        definition.directives,
+                        `type ${definition.name} definition`
                       ),
                     };
+                    break;
+                  }
+                  case "object": {
+                    typeDefinitions[definition.name] = {
+                      name: definition.name,
+                      type: "object",
+                      description: definition.description,
+                      directives: directives(
+                        definition.directives,
+                        `type ${definition.name} definition`
+                      ),
+                      implementsInterfaces: noDuplicate(
+                        definition.implementsInterfaces ?? [],
+                        `implements on type ${definition.description}`
+                      ),
+                      fieldsDefinition:
+                        optional(definition.fieldsDefinition, (d) =>
+                          unwrap(
+                            fieldsDefinition(
+                              d,
+                              `type ${definition.name} definition`
+                            )
+                          )
+                        ) ?? {},
+                    };
+                    break;
+                  }
+                  case "interface": {
+                    typeDefinitions[definition.name] = {
+                      name: definition.name,
+                      type: "interface",
+                      description: definition.description,
+                      directives: directives(
+                        definition.directives,
+                        `type ${definition.name} definition`
+                      ),
+                      implementsInterfaces: noDuplicate(
+                        definition.implementsInterfaces ?? [],
+                        `implements on type ${definition.description}`
+                      ),
+                      fieldsDefinition:
+                        optional(definition.fieldsDefinition, (d) =>
+                          unwrap(
+                            fieldsDefinition(
+                              d,
+                              `type ${definition.name} definition`
+                            )
+                          )
+                        ) ?? {},
+                    };
+                    break;
+                  }
+                  case "union": {
+                    typeDefinitions[definition.name] = {
+                      name: definition.name,
+                      type: "union",
+                      description: definition.description,
+                      directives: directives(
+                        definition.directives,
+                        `type ${definition.name} definition`
+                      ),
+                      unionMemberTypes: noDuplicate(
+                        definition.unionMemberTypes ?? [],
+                        `type ${definition.name} definition`
+                      ),
+                    };
+                    break;
+                  }
+                  case "enum": {
+                    const enumValuesDefinition: EnumValuesDefinition = {};
+
+                    for (const enumValueDefinition of definition.enumValuesDefinition ??
+                      []) {
+                      if (enumValuesDefinition[enumValueDefinition.enumValue]) {
+                        return {
+                          isError: true,
+                          message: `Duplicate enum value ${enumValueDefinition.enumValue} on ${definition.name} definition`,
+                        };
+                      }
+                      enumValuesDefinition[enumValueDefinition.enumValue] = {
+                        name: enumValueDefinition.enumValue,
+                        description: enumValueDefinition.description,
+                        directives: directives(
+                          enumValueDefinition.directives,
+                          `type ${definition.name} definition`
+                        ),
+                      };
+                    }
+
+                    typeDefinitions[definition.name] = {
+                      name: definition.name,
+                      type: "enum",
+                      description: definition.description,
+                      directives: directives(
+                        definition.directives,
+                        `type ${definition.name} definition`
+                      ),
+                      enumValuesDefinition,
+                    };
+                    break;
+                  }
+                  case "inputObject": {
+                    typeDefinitions[definition.name] = {
+                      name: definition.name,
+                      type: "inputObject",
+                      description: definition.description,
+                      directives: directives(
+                        definition.directives,
+                        `type ${definition.name} definition`
+                      ),
+                      inputFieldsDefinition: unwrap(
+                        inputValuesDefinition(
+                          definition.inputFieldsDefinition,
+                          `type ${definition.name} definition`
+                        )
+                      ),
+                    };
+                    break;
+                  }
+                }
+              }
+            }
+            break;
+          }
+          case "extension": {
+            switch (definition.extensionType) {
+              case "schema": {
+                if (!rootOperationTypes) {
+                  return {
+                    isError: true,
+                    message: "SchemaExtension before SchemaDefinition",
+                  };
+                }
+                for (const rootOperationTypeDefinition of definition.rootOperationTypeDefinitions ??
+                  []) {
+                  if (
+                    rootOperationTypes[
+                      rootOperationTypeDefinition.operationType
+                    ]
+                  ) {
+                    return {
+                      isError: true,
+                      message: `Multiple RootOperationTypeDefinition for ${rootOperationTypeDefinition.operationType}`,
+                    };
+                  }
+                  rootOperationTypes[
+                    rootOperationTypeDefinition.operationType
+                  ] = rootOperationTypeDefinition.type;
+                }
+                schemaDirectives.push(
+                  ...directives(definition.directives, "schema definition")
+                );
+                break;
+              }
+              case "type": {
+                const typeDefinition = typeDefinitions[definition.name];
+                if (!typeDefinition) {
+                  return {
+                    isError: true,
+                    message: `Type extension before type definition for type ${definition.name}`,
+                  };
+                }
+                switch (definition.typeType) {
+                  case "scalar": {
+                    if (typeDefinition.type !== "scalar") {
+                      return {
+                        isError: true,
+                        message: `Type extension for type with different type ${definition.name}`,
+                      };
+                    }
+                    typeDefinition.directives.push(
+                      ...directives(
+                        definition.directives,
+                        `type ${definition.name} extension`
+                      )
+                    );
+                    break;
+                  }
+                  case "object": {
+                    if (typeDefinition.type !== "object") {
+                      return {
+                        isError: true,
+                        message: `Type extension for type with different type ${definition.name}`,
+                      };
+                    }
+                    typeDefinition.implementsInterfaces = noDuplicate(
+                      [
+                        ...typeDefinition.implementsInterfaces,
+                        ...(definition.implementsInterfaces ?? []),
+                      ],
+                      `implements on type ${definition.name} extension`
+                    );
+                    for (const fd of definition.fieldsDefinition ?? []) {
+                      if (typeDefinition.fieldsDefinition[fd.name]) {
+                        return {
+                          isError: true,
+                          message: `Multiple field definition on type ${definition.type} extension`,
+                        };
+                      }
+                      typeDefinition.fieldsDefinition[fd.name] =
+                        fieldDefinition(
+                          fd,
+                          `field ${fd.name} on type ${definition.type} extension`
+                        );
+                    }
+                    typeDefinition.directives.push(
+                      ...directives(
+                        definition.directives,
+                        `type ${definition.name} extension`
+                      )
+                    );
+                    break;
+                  }
+                  case "interface": {
+                    if (typeDefinition.type !== "interface") {
+                      return {
+                        isError: true,
+                        message: `Type extension for type with different type ${definition.name}`,
+                      };
+                    }
+                    typeDefinition.implementsInterfaces = noDuplicate(
+                      [
+                        ...typeDefinition.implementsInterfaces,
+                        ...(definition.implementsInterfaces ?? []),
+                      ],
+                      `implements on type ${definition.name} extension`
+                    );
+                    for (const fd of definition.fieldsDefinition ?? []) {
+                      if (typeDefinition.fieldsDefinition[fd.name]) {
+                        return {
+                          isError: true,
+                          message: `Multiple field definition on type ${definition.type} extension`,
+                        };
+                      }
+                      typeDefinition.fieldsDefinition[fd.name] =
+                        fieldDefinition(
+                          fd,
+                          `field ${fd.name} on type ${definition.type} extension`
+                        );
+                    }
+                    typeDefinition.directives.push(
+                      ...directives(
+                        definition.directives,
+                        `type ${definition.name} extension`
+                      )
+                    );
+                    break;
+                  }
+                  case "union": {
+                    if (typeDefinition.type !== "union") {
+                      return {
+                        isError: true,
+                        message: `Type extension for type with different type ${definition.name}`,
+                      };
+                    }
+                    typeDefinition.directives.push(
+                      ...directives(
+                        definition.directives,
+                        `type ${definition.name} extension`
+                      )
+                    );
+                    typeDefinition.unionMemberTypes = noDuplicate(
+                      [
+                        ...typeDefinition.unionMemberTypes,
+                        ...(definition.unionMemberTypes ?? []),
+                      ],
+                      `type ${definition.name} extension`
+                    );
+                    break;
+                  }
+                  case "enum": {
+                    if (typeDefinition.type !== "enum") {
+                      return {
+                        isError: true,
+                        message: `Type extension for type with different type ${definition.name}`,
+                      };
+                    }
+                    for (const enumValueDefinition of definition.enumValuesDefinition ??
+                      []) {
+                      if (
+                        typeDefinition.enumValuesDefinition[
+                          enumValueDefinition.enumValue
+                        ]
+                      ) {
+                        return {
+                          isError: true,
+                          message: `Duplicate enum value ${enumValueDefinition.enumValue} on ${definition.name} extension`,
+                        };
+                      }
+                      typeDefinition.enumValuesDefinition[
+                        enumValueDefinition.enumValue
+                      ] = {
+                        name: enumValueDefinition.enumValue,
+                        description: enumValueDefinition.description,
+                        directives: directives(
+                          enumValueDefinition.directives,
+                          `type ${definition.name} extension`
+                        ),
+                      };
+                    }
+                    typeDefinition.directives.push(
+                      ...directives(
+                        definition.directives,
+                        `type ${definition.name} extension`
+                      )
+                    );
+                    break;
+                  }
+                  case "inputObject": {
+                    if (typeDefinition.type !== "inputObject") {
+                      return {
+                        isError: true,
+                        message: `Type extension for type with different type ${definition.name}`,
+                      };
+                    }
+                    for (const argumentDefinition of definition.inputFieldsDefinition ??
+                      []) {
+                      if (
+                        typeDefinition.inputFieldsDefinition[
+                          argumentDefinition.name
+                        ]
+                      ) {
+                        return {
+                          isError: true,
+                          message: `Multiple argument ${argumentDefinition.name} on type ${definition.name} extension`,
+                        };
+                      }
+                      typeDefinition.inputFieldsDefinition[
+                        argumentDefinition.name
+                      ] = {
+                        name: argumentDefinition.name,
+                        description: argumentDefinition.description,
+                        type: argumentDefinition.type,
+                        defaultValue: argumentDefinition.defaultValue,
+                        directives: directives(
+                          argumentDefinition.directives,
+                          `argument on type ${definition.name} extension`
+                        ),
+                      };
+                    }
+                    typeDefinition.directives.push(
+                      ...directives(
+                        definition.directives,
+                        `type ${definition.name} extension`
+                      )
+                    );
+                    break;
                   }
                 }
               }
@@ -245,14 +644,21 @@ function schema(document: Document): Schema | Error {
   };
 }
 
-function directive(directive: ParserDirective): Directive | Error {
+function directives(
+  directives: ParserDirective[] | undefined,
+  on: string
+): Directive[] {
+  return (directives ?? []).map((d) => unwrap(directive(d, on)));
+}
+
+function directive(directive: ParserDirective, on: string): Directive | Error {
   const args: Arguments = {};
 
   for (const argument of directive.arguments ?? []) {
     if (args[argument.name]) {
       return {
         isError: true,
-        message: `Multiple argument ${argument.name} on directive ${directive.name}`,
+        message: `Multiple argument ${argument.name} on directive ${directive.name} on ${on}`,
       };
     }
     args[argument.name] = { name: argument.name, value: argument.value };
@@ -264,23 +670,86 @@ function directive(directive: ParserDirective): Directive | Error {
   };
 }
 
-function argumentsDefinition(
-  definition: ParserArgumentsDefinition
+function inputValuesDefinition(
+  definition: ParserArgumentsDefinition | undefined,
+  on: string
 ): ArgumentsDefinition | Error {
   const result: ArgumentsDefinition = {};
 
-  for (const argumentDefinition of definition) {
+  for (const argumentDefinition of definition ?? []) {
     if (result[argumentDefinition.name]) {
       return {
         isError: true,
-        message: ``,
+        message: `Multiple argument ${argumentDefinition.name} on ${on}`,
       };
     }
+    result[argumentDefinition.name] = {
+      name: argumentDefinition.name,
+      description: argumentDefinition.description,
+      type: argumentDefinition.type,
+      defaultValue: argumentDefinition.defaultValue,
+      directives: directives(
+        argumentDefinition.directives,
+        `argument on ${on}`
+      ),
+    };
   }
 
   return result;
 }
 
-export function analyzeOperation(document: Document): Query {
+function fieldsDefinition(
+  definition: ParserFieldsDefinition,
+  on: string
+): FieldsDefinition | Error {
+  const result: FieldsDefinition = {};
+
+  for (const fd of definition) {
+    if (result[fd.name]) {
+      return {
+        isError: true,
+        message: `Multiple field definition on ${on}`,
+      };
+    }
+    result[fd.name] = fieldDefinition(fd, `field ${fd.name} on ${on}`);
+  }
+
+  return result;
+}
+
+function fieldDefinition(
+  definition: ParserFieldDefinition,
+  on: string
+): FieldDefinition {
+  return {
+    description: definition.description,
+    name: definition.name,
+    argumentsDefinition: unwrap(
+      inputValuesDefinition(definition.argumentsDefinition, on)
+    ),
+    directives: directives(definition.directives, on),
+    type: definition.type,
+  };
+}
+
+function noDuplicate(strs: string[], on: string): string[] {
+  if (new Set(strs).size !== strs.length) {
+    unwrap({ isError: true, message: `Duplicate ${on}` });
+  }
+  return strs;
+}
+
+export function OperationSchema(document: Document): Operation | Error {
+  try {
+    return unwrap(operation(document));
+  } catch (e) {
+    if (e instanceof ParseError) {
+      return e.error;
+    }
+    throw e;
+  }
+}
+
+function operation(document: Document): Operation | Error {
   //
 }
