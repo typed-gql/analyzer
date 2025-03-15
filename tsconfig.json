@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "noEmit": true,
+
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "noUncheckedIndexedAccess": true,
+
+    "target": "ESNext",
+    "module": "NodeNext",
+    "moduleResolution": "nodenext",
+  },
+}
