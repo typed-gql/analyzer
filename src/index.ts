@@ -121,7 +121,7 @@ export type TypeDefinition =
 export interface Schema {
   isError: false;
   description: string | undefined;
-  rootOperationTypes: Record<OperationType, string | undefined>;
+  rootOperationTypes: Partial<Record<OperationType, string>>;
   schemaDirectives: Directive[];
   directiveDefinitions: DirectiveDefinitions;
   typeDefinitions: TypeDefinitions;
@@ -183,7 +183,7 @@ export function analyzeSchema(document: Document): Schema | Error {
 
 function schema(document: Document): Schema | Error {
   let description: string | undefined;
-  let rootOperationTypes: Record<OperationType, string | undefined> | undefined;
+  let rootOperationTypes: Partial<Record<OperationType, string>> | undefined;
   const schemaDirectives: Directive[] = [];
   const directiveDefinitions: DirectiveDefinitions = {};
   const typeDefinitions: TypeDefinitions = {};
@@ -201,11 +201,7 @@ function schema(document: Document): Schema | Error {
                     message: "Multiple SchemaDefinition",
                   };
                 }
-                rootOperationTypes = {
-                  query: undefined,
-                  mutation: undefined,
-                  subscription: undefined,
-                };
+                rootOperationTypes = {};
                 for (const rootOperationTypeDefinition of definition.rootOperationTypeDefinitions) {
                   if (
                     rootOperationTypes[
@@ -402,12 +398,7 @@ function schema(document: Document): Schema | Error {
           case "extension": {
             switch (definition.extensionType) {
               case "schema": {
-                if (!rootOperationTypes) {
-                  return {
-                    isError: true,
-                    message: "SchemaExtension before SchemaDefinition",
-                  };
-                }
+                rootOperationTypes ??= {};
                 for (const rootOperationTypeDefinition of definition.rootOperationTypeDefinitions ??
                   []) {
                   if (
@@ -635,9 +626,7 @@ function schema(document: Document): Schema | Error {
   return {
     isError: false,
     description,
-    rootOperationTypes: unwrap(
-      rootOperationTypes ?? { isError: true, message: "No SchemaDefinition" }
-    ),
+    rootOperationTypes: rootOperationTypes ?? {},
     schemaDirectives,
     directiveDefinitions,
     typeDefinitions,
@@ -739,7 +728,7 @@ function noDuplicate(strs: string[], on: string): string[] {
   return strs;
 }
 
-export function OperationSchema(document: Document): Operation | Error {
+export function analyzeOperation(document: Document): Operation | Error {
   try {
     return unwrap(operation(document));
   } catch (e) {
