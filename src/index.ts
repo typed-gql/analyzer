@@ -2,6 +2,7 @@ import {
   DirectiveLocation,
   Document,
   EnumTypeExtension,
+  ExecutableDefinition,
   InputObjectTypeExtension,
   InterfaceTypeExtension,
   ObjectTypeExtension,
@@ -65,7 +66,7 @@ export type TypeDefinitions = Partial<Record<string, TypeDefinition>>;
 
 export interface TypeDefinitionBase {
   name: string;
-  description?: string;
+  description: string | undefined;
   directives: Directive[];
 }
 
@@ -74,7 +75,7 @@ export interface ScalarTypeDefinition extends TypeDefinitionBase {
 }
 
 export interface FieldDefinition {
-  description?: string;
+  description: string | undefined;
   name: string;
   argumentsDefinition: ArgumentsDefinition;
   type: Type;
@@ -147,8 +148,62 @@ export interface Schema {
   typeDefinitions: TypeDefinitions;
 }
 
+export interface SelectionSetItemBase {
+  directives: Directive[];
+}
+
+export interface SelectionSetItemField extends SelectionSetItemBase {
+  type: "field";
+  alias: string | undefined;
+  name: string;
+  arguments: Arguments;
+  selectionSet: SelectionSetItem[];
+}
+
+export interface SelectionSetItemFragmentSpread extends SelectionSetItemBase {
+  type: "fragmentSpread";
+  name: string;
+}
+
+export interface SelectionSetItemInlineFragment extends SelectionSetItemBase {
+  type: "inlineFragment";
+  typeCondition: string | undefined;
+  selectionSet: SelectionSetItem[];
+}
+
+export type SelectionSetItem =
+  | SelectionSetItemField
+  | SelectionSetItemFragmentSpread
+  | SelectionSetItemInlineFragment;
+
+export interface Fragment {
+  name: string;
+  typeCondition: string;
+  directives: Directive[];
+  selectionSet: SelectionSetItem[];
+}
+
+export type VariableDefinitions = Partial<Record<string, VariableDefinition>>;
+
+export interface VariableDefinition {
+  name: string;
+  type: Type;
+  defaultValue: Value | undefined;
+  directives: Directive[];
+}
+
+export interface OperationItem {
+  type?: "query" | "mutation" | "subscription";
+  name: string | undefined;
+  variableDefinitions: VariableDefinitions;
+  directives: Directive[];
+  selectionSet: SelectionSetItem[];
+}
+
 export interface Operation {
-  // TODO:
+  isError: false;
+  fragments: Partial<Record<string, Fragment>>;
+  operations: Partial<Record<string, OperationItem>>;
 }
 
 class ParseError extends Error {
@@ -840,6 +895,45 @@ export function analyzeOperation(document: Document): Operation | Error {
   }
 }
 
-function operation(document: Document): Operation | Error {
-  //
+interface OperationContext {
+  fragments: Partial<Record<string, Fragment>>;
+  operations: Partial<Record<string, OperationItem>>;
+}
+
+function operation(document: Document): Operation {
+  const context: OperationContext = {
+    fragments: {},
+    operations: {},
+  };
+
+  for (const definition of document) {
+    switch (definition.type) {
+      case "typeSystem":
+        unwrap({
+          isError: true,
+          message: "TypeSystemDefinitionOrExtension in Operation",
+        });
+      case "executable":
+        executable(definition, context);
+        break;
+    }
+  }
+
+  return {
+    isError: false,
+    ...context,
+  };
+}
+
+function executable(
+  definition: ExecutableDefinition,
+  context: OperationContext
+): void {
+  // TODO:
+  switch (definition.subType) {
+    case "fragment":
+      break;
+    case "operation":
+      break;
+  }
 }
