@@ -215,12 +215,14 @@ class ParseError extends Error {
   }
 }
 
+function raise(error: Error): never {
+  throw new ParseError(error);
+}
+
 function isError<T>(t: Error | T): t is Error {
   return t && typeof t === "object" && "isError" in t && t.isError === true;
 }
 
-function unwrap(error: Error): never;
-function unwrap<T>(result: Error | T): T;
 function unwrap<T>(result: Error | T): T {
   if (isError(result)) {
     throw new ParseError(result);
@@ -279,7 +281,7 @@ function schema(document: Document): Schema {
         typeSystem(definition, context);
         break;
       case "executable":
-        unwrap({ isError: true, message: "ExecutableDocument in Schema" });
+        raise({ isError: true, message: "ExecutableDocument in Schema" });
     }
   }
 
@@ -329,7 +331,7 @@ function schemaDefinition(
   context: SchemaContext
 ): void {
   if (context.rootOperationTypes) {
-    unwrap({
+    raise({
       isError: true,
       message: "Multiple SchemaDefinition",
     });
@@ -337,7 +339,7 @@ function schemaDefinition(
   context.rootOperationTypes = {};
   for (const rootOperationTypeDefinition of definition.rootOperationTypeDefinitions) {
     if (context.rootOperationTypes[rootOperationTypeDefinition.operationType]) {
-      unwrap({
+      raise({
         isError: true,
         message: `Multiple RootOperationTypeDefinition for ${rootOperationTypeDefinition.operationType}`,
       });
@@ -356,7 +358,7 @@ function directiveDefinition(
   context: SchemaContext
 ): void {
   if (context.directiveDefinitions[definition.name]) {
-    unwrap({
+    raise({
       isError: true,
       message: `Multiple DirectiveDefinition for ${definition.name}`,
     });
@@ -366,16 +368,14 @@ function directiveDefinition(
     locations: {},
     name: definition.name,
     repeatable: definition.repeatable,
-    argumentsDefinition: unwrap(
-      inputValuesDefinition(
-        definition.argumentsDefinition,
-        `directive ${definition.name}`
-      )
+    argumentsDefinition: inputValuesDefinition(
+      definition.argumentsDefinition,
+      `directive ${definition.name}`
     ),
   } as DirectiveDefinition);
   for (const directiveLocation of definition.directiveLocations) {
     if (directive.locations[directiveLocation]) {
-      unwrap({
+      raise({
         isError: true,
         message: `Multiple DirectiveLocation ${directiveLocation} for directive ${directive.name}`,
       });
@@ -389,7 +389,7 @@ function typeDefinition(
   context: SchemaContext
 ): void {
   if (context.typeDefinitions[definition.name]) {
-    unwrap({
+    raise({
       isError: true,
       message: `Multiple TypeDefinition for ${definition.name}`,
     });
@@ -449,7 +449,7 @@ function objectTypeDefinition(
     ),
     fieldsDefinition:
       optional(definition.fieldsDefinition, (d) =>
-        unwrap(fieldsDefinition(d, `type ${definition.name} definition`))
+        fieldsDefinition(d, `type ${definition.name} definition`)
       ) ?? {},
   };
 }
@@ -472,7 +472,7 @@ function interfaceTypeDefinition(
     ),
     fieldsDefinition:
       optional(definition.fieldsDefinition, (d) =>
-        unwrap(fieldsDefinition(d, `type ${definition.name} definition`))
+        fieldsDefinition(d, `type ${definition.name} definition`)
       ) ?? {},
   };
 }
@@ -504,7 +504,7 @@ function enumTypeDefinition(
 
   for (const enumValueDefinition of definition.enumValuesDefinition ?? []) {
     if (enumValuesDefinition[enumValueDefinition.enumValue]) {
-      unwrap({
+      raise({
         isError: true,
         message: `Duplicate enum value ${enumValueDefinition.enumValue} on ${definition.name} definition`,
       });
@@ -543,11 +543,9 @@ function inputObjectTypeDefinition(
       definition.directives,
       `type ${definition.name} definition`
     ),
-    inputFieldsDefinition: unwrap(
-      inputValuesDefinition(
-        definition.inputFieldsDefinition,
-        `type ${definition.name} definition`
-      )
+    inputFieldsDefinition: inputValuesDefinition(
+      definition.inputFieldsDefinition,
+      `type ${definition.name} definition`
     ),
   };
 }
@@ -574,7 +572,7 @@ function schemaExtension(
   for (const rootOperationTypeDefinition of definition.rootOperationTypeDefinitions ??
     []) {
     if (context.rootOperationTypes[rootOperationTypeDefinition.operationType]) {
-      unwrap({
+      raise({
         isError: true,
         message: `Multiple RootOperationTypeDefinition for ${rootOperationTypeDefinition.operationType}`,
       });
@@ -593,7 +591,7 @@ function typeExtension(
 ): void {
   const typeDefinition = context.typeDefinitions[definition.name];
   if (!typeDefinition) {
-    unwrap({
+    raise({
       isError: true,
       message: `Type extension before type definition for type ${definition.name}`,
     });
@@ -625,7 +623,7 @@ function scalarTypeExtension(
   typeDefinition: TypeDefinition
 ): void {
   if (typeDefinition.type !== "scalar") {
-    unwrap({
+    raise({
       isError: true,
       message: `Type extension for type with different type ${definition.name}`,
     });
@@ -640,7 +638,7 @@ function objectTypeExtension(
   typeDefinition: TypeDefinition
 ): void {
   if (typeDefinition.type !== "object") {
-    unwrap({
+    raise({
       isError: true,
       message: `Type extension for type with different type ${definition.name}`,
     });
@@ -654,7 +652,7 @@ function objectTypeExtension(
   );
   for (const fd of definition.fieldsDefinition ?? []) {
     if (typeDefinition.fieldsDefinition[fd.name]) {
-      unwrap({
+      raise({
         isError: true,
         message: `Multiple field definition on type ${definition.type} extension`,
       });
@@ -674,7 +672,7 @@ function interfaceTypeExtension(
   typeDefinition: TypeDefinition
 ): void {
   if (typeDefinition.type !== "interface") {
-    unwrap({
+    raise({
       isError: true,
       message: `Type extension for type with different type ${definition.name}`,
     });
@@ -688,7 +686,7 @@ function interfaceTypeExtension(
   );
   for (const fd of definition.fieldsDefinition ?? []) {
     if (typeDefinition.fieldsDefinition[fd.name]) {
-      unwrap({
+      raise({
         isError: true,
         message: `Multiple field definition on type ${definition.type} extension`,
       });
@@ -708,7 +706,7 @@ function unionTypeExtension(
   typeDefinition: TypeDefinition
 ): void {
   if (typeDefinition.type !== "union") {
-    unwrap({
+    raise({
       isError: true,
       message: `Type extension for type with different type ${definition.name}`,
     });
@@ -730,14 +728,14 @@ function enumTypeExtension(
   typeDefinition: TypeDefinition
 ): void {
   if (typeDefinition.type !== "enum") {
-    unwrap({
+    raise({
       isError: true,
       message: `Type extension for type with different type ${definition.name}`,
     });
   }
   for (const enumValueDefinition of definition.enumValuesDefinition ?? []) {
     if (typeDefinition.enumValuesDefinition[enumValueDefinition.enumValue]) {
-      unwrap({
+      raise({
         isError: true,
         message: `Duplicate enum value ${enumValueDefinition.enumValue} on ${definition.name} extension`,
       });
@@ -761,14 +759,14 @@ function inputObjectTypeExtension(
   typeDefinition: TypeDefinition
 ): void {
   if (typeDefinition.type !== "inputObject") {
-    unwrap({
+    raise({
       isError: true,
       message: `Type extension for type with different type ${definition.name}`,
     });
   }
   for (const argumentDefinition of definition.inputFieldsDefinition ?? []) {
     if (typeDefinition.inputFieldsDefinition[argumentDefinition.name]) {
-      unwrap({
+      raise({
         isError: true,
         message: `Multiple argument ${argumentDefinition.name} on type ${definition.name} extension`,
       });
@@ -793,18 +791,18 @@ function directives(
   directives: ParserDirective[] | undefined,
   on: string
 ): Directive[] {
-  return (directives ?? []).map((d) => unwrap(directive(d, on)));
+  return (directives ?? []).map((d) => directive(d, on));
 }
 
-function directive(directive: ParserDirective, on: string): Directive | Error {
+function directive(directive: ParserDirective, on: string): Directive {
   const args: Arguments = {};
 
   for (const argument of directive.arguments ?? []) {
     if (args[argument.name]) {
-      return {
+      raise({
         isError: true,
         message: `Multiple argument ${argument.name} on directive ${directive.name} on ${on}`,
-      };
+      });
     }
     args[argument.name] = { name: argument.name, value: argument.value };
   }
@@ -818,15 +816,15 @@ function directive(directive: ParserDirective, on: string): Directive | Error {
 function inputValuesDefinition(
   definition: ParserArgumentsDefinition | undefined,
   on: string
-): ArgumentsDefinition | Error {
+): ArgumentsDefinition {
   const result: ArgumentsDefinition = {};
 
   for (const argumentDefinition of definition ?? []) {
     if (result[argumentDefinition.name]) {
-      return {
+      return raise({
         isError: true,
         message: `Multiple argument ${argumentDefinition.name} on ${on}`,
-      };
+      });
     }
     result[argumentDefinition.name] = {
       name: argumentDefinition.name,
@@ -846,15 +844,15 @@ function inputValuesDefinition(
 function fieldsDefinition(
   definition: ParserFieldsDefinition,
   on: string
-): FieldsDefinition | Error {
+): FieldsDefinition {
   const result: FieldsDefinition = {};
 
   for (const fd of definition) {
     if (result[fd.name]) {
-      return {
+      return raise({
         isError: true,
         message: `Multiple field definition on ${on}`,
-      };
+      });
     }
     result[fd.name] = fieldDefinition(fd, `field ${fd.name} on ${on}`);
   }
@@ -869,8 +867,9 @@ function fieldDefinition(
   return {
     description: definition.description,
     name: definition.name,
-    argumentsDefinition: unwrap(
-      inputValuesDefinition(definition.argumentsDefinition, on)
+    argumentsDefinition: inputValuesDefinition(
+      definition.argumentsDefinition,
+      on
     ),
     directives: directives(definition.directives, on),
     type: definition.type,
@@ -879,7 +878,7 @@ function fieldDefinition(
 
 function noDuplicate(strs: string[], on: string): string[] {
   if (new Set(strs).size !== strs.length) {
-    unwrap({ isError: true, message: `Duplicate ${on}` });
+    raise({ isError: true, message: `Duplicate ${on}` });
   }
   return strs;
 }
@@ -909,7 +908,7 @@ function operation(document: Document): Operation {
   for (const definition of document) {
     switch (definition.type) {
       case "typeSystem":
-        unwrap({
+        raise({
           isError: true,
           message: "TypeSystemDefinitionOrExtension in Operation",
         });
